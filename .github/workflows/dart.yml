@@ -30,10 +30,10 @@ jobs:
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
 
-      - name: Fix intl dependency conflict
+      - name: Fix intl dependency
         run: |
-          # Replace intl version in pubspec.yaml
-          sed -i 's/intl: \^0\.20\.2/intl: ^0.19.0/' pubspec.yaml
+          # Remove intl version constraint to let Flutter SDK manage it
+          sed -i '/intl:/d' pubspec.yaml
 
       - name: Install dependencies
         run: flutter pub get
@@ -73,10 +73,10 @@ jobs:
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
 
-      - name: Fix intl dependency conflict
+      - name: Fix intl dependency
         run: |
-          # Replace intl version in pubspec.yaml
-          sed -i '' 's/intl: \^0\.20\.2/intl: ^0.19.0/' pubspec.yaml
+          # Remove intl version constraint to let Flutter SDK manage it
+          sed -i '' '/intl:/d' pubspec.yaml
 
       - name: Install dependencies
         run: flutter pub get
@@ -121,11 +121,11 @@ jobs:
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
 
-      - name: Fix intl dependency conflict
+      - name: Fix intl dependency
         shell: bash
         run: |
-          # Replace intl version in pubspec.yaml
-          sed -i 's/intl: \^0\.20\.2/intl: ^0.19.0/' pubspec.yaml
+          # Remove intl version constraint to let Flutter SDK manage it
+          sed -i '/intl:/d' pubspec.yaml
 
       - name: Install dependencies
         run: flutter pub get
