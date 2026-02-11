@@ -152,16 +152,19 @@ jobs:
           sed -i '/intl:/d' pubspec.yaml
 
       - name: Fix code compatibility issues
-        shell: bash
+        shell: pwsh
         run: |
-          # Fix CardTheme to CardThemeData (correct direction)
-          if [ -f "lib/core/theme/app_theme.dart" ]; then
-            sed -i 's/CardTheme(/CardThemeData(/g' lib/core/theme/app_theme.dart
-          fi
+          # Fix CardTheme to CardThemeData
+          if (Test-Path "lib/core/theme/app_theme.dart") {
+            (Get-Content "lib/core/theme/app_theme.dart") -replace 'CardTheme\(', 'CardThemeData(' | Set-Content "lib/core/theme/app_theme.dart"
+          }
           
-          # Fix Color.withOpacity to match current Flutter API
-          # Replace withValues with withOpacity for alpha channel
-          find lib -name "*.dart" -type f -exec sed -i -E 's/\.withValues\s*\(\s*alpha:\s*([0-9.]+)\s*\)/.withOpacity(\1)/g' {} +
+          # Fix Color.withValues to Color.withOpacity
+          Get-ChildItem -Path lib -Filter *.dart -Recurse | ForEach-Object {
+            $content = Get-Content $_.FullName -Raw
+            $content = $content -replace '\.withValues\s*\(\s*alpha:\s*([0-9.]+)\s*\)', '.withOpacity($1)'
+            Set-Content -Path $_.FullName -Value $content -NoNewline
+          }
 
       - name: Install dependencies
         run: flutter pub get
