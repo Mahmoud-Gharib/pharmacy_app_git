@@ -26,6 +26,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.24.0'  # Use a specific stable version
 
       - name: Install dependencies
         run: flutter pub get
@@ -61,6 +62,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.24.0'
 
       - name: Install dependencies
         run: flutter pub get
@@ -94,16 +96,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Visual Studio components
+        uses: microsoft/setup-msbuild@v2
+
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.24.0'
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Windows
-        run: flutter build windows --release
+      - name: Update Firebase Windows plugin (if needed)
+        shell: bash
+        run: |
+          # Check if firebase is in dependencies
+          if grep -q "firebase" pubspec.yaml; then
+            echo "Firebase detected, updating Windows configuration..."
+            flutter pub upgrade firebase_core firebase_auth
+          fi
+
+      - name: Clean build
+        run: flutter clean
+
+      - name: Build Windows with specific CMake version
+        shell: cmd
+        run: |
+          flutter build windows --release
+        env:
+          CMAKE_MINIMUM_REQUIRED_VERSION: 3.10
 
       - name: Read app name from name.txt
         id: read_app_name
