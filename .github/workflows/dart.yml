@@ -26,7 +26,14 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.24.0'  # Use a specific stable version
+
+      - name: Disable Flutter analytics
+        run: flutter config --no-analytics
+
+      - name: Fix intl dependency conflict
+        run: |
+          # Replace intl version in pubspec.yaml
+          sed -i 's/intl: \^0\.20\.2/intl: ^0.19.0/' pubspec.yaml
 
       - name: Install dependencies
         run: flutter pub get
@@ -62,7 +69,14 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.24.0'
+
+      - name: Disable Flutter analytics
+        run: flutter config --no-analytics
+
+      - name: Fix intl dependency conflict
+        run: |
+          # Replace intl version in pubspec.yaml
+          sed -i '' 's/intl: \^0\.20\.2/intl: ^0.19.0/' pubspec.yaml
 
       - name: Install dependencies
         run: flutter pub get
@@ -103,29 +117,24 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.24.0'
+
+      - name: Disable Flutter analytics
+        run: flutter config --no-analytics
+
+      - name: Fix intl dependency conflict
+        shell: bash
+        run: |
+          # Replace intl version in pubspec.yaml
+          sed -i 's/intl: \^0\.20\.2/intl: ^0.19.0/' pubspec.yaml
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Update Firebase Windows plugin (if needed)
-        shell: bash
-        run: |
-          # Check if firebase is in dependencies
-          if grep -q "firebase" pubspec.yaml; then
-            echo "Firebase detected, updating Windows configuration..."
-            flutter pub upgrade firebase_core firebase_auth
-          fi
-
       - name: Clean build
         run: flutter clean
 
-      - name: Build Windows with specific CMake version
-        shell: cmd
-        run: |
-          flutter build windows --release
-        env:
-          CMAKE_MINIMUM_REQUIRED_VERSION: 3.10
+      - name: Build Windows
+        run: flutter build windows --release
 
       - name: Read app name from name.txt
         id: read_app_name
