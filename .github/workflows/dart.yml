@@ -151,19 +151,17 @@ jobs:
         run: |
           sed -i '/intl:/d' pubspec.yaml
 
-      - name: Fix code compatibility for older Flutter
+      - name: Fix code compatibility issues
         shell: bash
         run: |
-          # Fix CardThemeData constructor (Flutter 3.24 compatibility)
+          # Fix CardTheme to CardThemeData (correct direction)
           if [ -f "lib/core/theme/app_theme.dart" ]; then
-            sed -i 's/CardThemeData(/CardTheme(/g' lib/core/theme/app_theme.dart
+            sed -i 's/CardTheme(/CardThemeData(/g' lib/core/theme/app_theme.dart
           fi
           
-          # Fix Color.withValues to Color.withOpacity (Flutter 3.24 compatibility)
-          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(alpha: \([0-9.]*\))/.withOpacity(\1)/g' {} +
-          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(red: \([0-9.]*\))/.withRed(\1)/g' {} +
-          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(green: \([0-9.]*\))/.withGreen(\1)/g' {} +
-          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(blue: \([0-9.]*\))/.withBlue(\1)/g' {} +
+          # Fix Color.withOpacity to match current Flutter API
+          # Replace withValues with withOpacity for alpha channel
+          find lib -name "*.dart" -type f -exec sed -i -E 's/\.withValues\s*\(\s*alpha:\s*([0-9.]+)\s*\)/.withOpacity(\1)/g' {} +
 
       - name: Install dependencies
         run: flutter pub get
@@ -234,29 +232,21 @@ jobs:
         id: check_builds
         run: |
           BUILDS=""
-          FILES=""
           
           if [ -f "release/${{ steps.read_app_name.outputs.app_name }}.apk" ]; then
             BUILDS="${BUILDS}- 🤖 **Android**: APK file (ready to install)\n"
-            FILES="${FILES}release/${{ steps.read_app_name.outputs.app_name }}.apk\n"
           fi
           
           if [ -f "release/${{ steps.read_app_name.outputs.app_name }}.ipa" ]; then
             BUILDS="${BUILDS}- 🍎 **iOS**: IPA file (unsigned - requires signing)\n"
-            FILES="${FILES}release/${{ steps.read_app_name.outputs.app_name }}.ipa\n"
           fi
           
           if [ -f "release/${{ steps.read_app_name.outputs.app_name }}-windows.zip" ]; then
             BUILDS="${BUILDS}- 🪟 **Windows**: ZIP archive (extract and run)\n"
-            FILES="${FILES}release/${{ steps.read_app_name.outputs.app_name }}-windows.zip\n"
           fi
           
           echo "builds<<EOF" >> $GITHUB_OUTPUT
           echo -e "$BUILDS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Upload to GitHub Release
