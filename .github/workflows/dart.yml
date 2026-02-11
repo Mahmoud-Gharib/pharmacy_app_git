@@ -58,7 +58,7 @@ jobs:
           path: apk_release/${{ steps.read_apk_name.outputs.apk_name }}.apk
 
   build-ios:
-    runs-on: macos-14  # Use macos-14 for better Xcode support
+    runs-on: macos-14
     name: Build iOS IPA
     steps:
       - name: Checkout code
@@ -71,7 +71,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.24.0'  # Use a stable version
 
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
@@ -82,25 +81,29 @@ jobs:
 
       - name: Update iOS deployment target
         run: |
-          # Update Podfile to use iOS 12.0 minimum
           sed -i '' "s/platform :ios, '.*'/platform :ios, '12.0'/" ios/Podfile || true
-          # Update project.pbxproj
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 10.0/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' ios/Runner.xcodeproj/project.pbxproj || true
 
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Pre-build to generate iOS files
+        run: flutter precache --ios
+
       - name: Clean iOS build
         run: |
-          cd ios
-          rm -rf Pods Podfile.lock
-          cd ..
           flutter clean
+          cd ios
+          rm -rf Pods Podfile.lock .symlinks
+          cd ..
 
-      - name: Install CocoaPods
+      - name: Get Flutter dependencies again
+        run: flutter pub get
+
+      - name: Install CocoaPods dependencies
         run: |
           cd ios
-          pod install
+          pod install --repo-update
           cd ..
 
       - name: Build iOS (without code signing)
@@ -127,7 +130,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     name: Build Windows App
-    continue-on-error: true  # Allow workflow to continue if Windows build fails
+    continue-on-error: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -139,7 +142,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.24.0'
 
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
@@ -149,11 +151,19 @@ jobs:
         run: |
           sed -i '/intl:/d' pubspec.yaml
 
-      - name: Upgrade Firebase packages for Windows compatibility
+      - name: Fix code compatibility for older Flutter
         shell: bash
         run: |
-          # Upgrade to latest Firebase packages that support Windows better
-          flutter pub upgrade firebase_core firebase_auth firebase_storage cloud_firestore
+          # Fix CardThemeData constructor (Flutter 3.24 compatibility)
+          if [ -f "lib/core/theme/app_theme.dart" ]; then
+            sed -i 's/CardThemeData(/CardTheme(/g' lib/core/theme/app_theme.dart
+          fi
+          
+          # Fix Color.withValues to Color.withOpacity (Flutter 3.24 compatibility)
+          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(alpha: \([0-9.]*\))/.withOpacity(\1)/g' {} +
+          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(red: \([0-9.]*\))/.withRed(\1)/g' {} +
+          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(green: \([0-9.]*\))/.withGreen(\1)/g' {} +
+          find lib -name "*.dart" -type f -exec sed -i 's/\.withValues(blue: \([0-9.]*\))/.withBlue(\1)/g' {} +
 
       - name: Install dependencies
         run: flutter pub get
@@ -163,8 +173,6 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release
-        env:
-          CMAKE_BUILD_TYPE: Release
 
       - name: Read app name from name.txt
         id: read_app_name
@@ -190,7 +198,7 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     needs: [build-android, build-ios, build-windows]
-    if: always()  # Run even if Windows build fails
+    if: always()
     name: Create GitHub Release
     steps:
       - name: Checkout code
@@ -209,13 +217,14 @@ jobs:
           path: release/
 
       - name: Download iOS IPA
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ios-ipa
           path: release/
 
       - name: Download Windows build
-        continue-on-error: true  # Don't fail if Windows artifact doesn't exist
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: windows-build
@@ -225,17 +234,29 @@ jobs:
         id: check_builds
         run: |
           BUILDS=""
+          FILES=""
+          
           if [ -f "release/${{ steps.read_app_name.outputs.app_name }}.apk" ]; then
             BUILDS="${BUILDS}- 🤖 **Android**: APK file (ready to install)\n"
+            FILES="${FILES}release/${{ steps.read_app_name.outputs.app_name }}.apk\n"
           fi
+          
           if [ -f "release/${{ steps.read_app_name.outputs.app_name }}.ipa" ]; then
             BUILDS="${BUILDS}- 🍎 **iOS**: IPA file (unsigned - requires signing)\n"
+            FILES="${FILES}release/${{ steps.read_app_name.outputs.app_name }}.ipa\n"
           fi
+          
           if [ -f "release/${{ steps.read_app_name.outputs.app_name }}-windows.zip" ]; then
             BUILDS="${BUILDS}- 🪟 **Windows**: ZIP archive (extract and run)\n"
+            FILES="${FILES}release/${{ steps.read_app_name.outputs.app_name }}-windows.zip\n"
           fi
+          
           echo "builds<<EOF" >> $GITHUB_OUTPUT
           echo -e "$BUILDS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Upload to GitHub Release
