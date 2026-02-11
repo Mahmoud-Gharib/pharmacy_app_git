@@ -32,7 +32,6 @@ jobs:
 
       - name: Fix intl dependency
         run: |
-          # Remove intl version constraint to let Flutter SDK manage it
           sed -i '/intl:/d' pubspec.yaml
 
       - name: Install dependencies
@@ -59,31 +58,53 @@ jobs:
           path: apk_release/${{ steps.read_apk_name.outputs.apk_name }}.apk
 
   build-ios:
-    runs-on: macos-latest
+    runs-on: macos-14  # Use macos-14 for better Xcode support
     name: Build iOS IPA
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
+
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.24.0'  # Use a stable version
 
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
 
       - name: Fix intl dependency
         run: |
-          # Remove intl version constraint to let Flutter SDK manage it
           sed -i '' '/intl:/d' pubspec.yaml
+
+      - name: Update iOS deployment target
+        run: |
+          # Update Podfile to use iOS 12.0 minimum
+          sed -i '' "s/platform :ios, '.*'/platform :ios, '12.0'/" ios/Podfile || true
+          # Update project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 10.0/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' ios/Runner.xcodeproj/project.pbxproj || true
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS (without code signing)
+      - name: Clean iOS build
         run: |
-          flutter build ios --release --no-codesign
+          cd ios
+          rm -rf Pods Podfile.lock
+          cd ..
+          flutter clean
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build iOS (without code signing)
+        run: flutter build ios --release --no-codesign
 
       - name: Read app name from name.txt
         id: read_app_name
@@ -106,6 +127,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     name: Build Windows App
+    continue-on-error: true  # Allow workflow to continue if Windows build fails
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -117,6 +139,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.24.0'
 
       - name: Disable Flutter analytics
         run: flutter config --no-analytics
@@ -124,8 +147,13 @@ jobs:
       - name: Fix intl dependency
         shell: bash
         run: |
-          # Remove intl version constraint to let Flutter SDK manage it
           sed -i '/intl:/d' pubspec.yaml
+
+      - name: Upgrade Firebase packages for Windows compatibility
+        shell: bash
+        run: |
+          # Upgrade to latest Firebase packages that support Windows better
+          flutter pub upgrade firebase_core firebase_auth firebase_storage cloud_firestore
 
       - name: Install dependencies
         run: flutter pub get
@@ -135,6 +163,8 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release
+        env:
+          CMAKE_BUILD_TYPE: Release
 
       - name: Read app name from name.txt
         id: read_app_name
@@ -144,12 +174,14 @@ jobs:
           echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
 
       - name: Create Windows ZIP
+        if: success()
         shell: powershell
         run: |
           $appName = "${{ steps.read_app_name.outputs.app_name }}"
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "$appName-windows.zip"
 
       - name: Upload Windows build as artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
@@ -158,6 +190,7 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     needs: [build-android, build-ios, build-windows]
+    if: always()  # Run even if Windows build fails
     name: Create GitHub Release
     steps:
       - name: Checkout code
@@ -182,10 +215,28 @@ jobs:
           path: release/
 
       - name: Download Windows build
+        continue-on-error: true  # Don't fail if Windows artifact doesn't exist
         uses: actions/download-artifact@v4
         with:
           name: windows-build
           path: release/
+
+      - name: Check which builds succeeded
+        id: check_builds
+        run: |
+          BUILDS=""
+          if [ -f "release/${{ steps.read_app_name.outputs.app_name }}.apk" ]; then
+            BUILDS="${BUILDS}- 🤖 **Android**: APK file (ready to install)\n"
+          fi
+          if [ -f "release/${{ steps.read_app_name.outputs.app_name }}.ipa" ]; then
+            BUILDS="${BUILDS}- 🍎 **iOS**: IPA file (unsigned - requires signing)\n"
+          fi
+          if [ -f "release/${{ steps.read_app_name.outputs.app_name }}-windows.zip" ]; then
+            BUILDS="${BUILDS}- 🪟 **Windows**: ZIP archive (extract and run)\n"
+          fi
+          echo "builds<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$BUILDS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
@@ -196,17 +247,18 @@ jobs:
             ## Release v1.0.${{ github.run_number }}
             
             ### Available Builds:
-            - 🤖 **Android**: APK file (ready to install)
-            - 🍎 **iOS**: IPA file (unsigned - requires signing for installation)
-            - 🪟 **Windows**: ZIP archive (extract and run)
+            ${{ steps.check_builds.outputs.builds }}
             
             ### Installation Notes:
             - **Android**: Download and install the APK directly
-            - **iOS**: Requires code signing before installation (use Xcode or third-party tools)
+            - **iOS**: Requires code signing before installation
             - **Windows**: Extract the ZIP and run the .exe file
+            
+            _Note: Some builds may be unavailable if compilation failed._
           files: |
             release/${{ steps.read_app_name.outputs.app_name }}.apk
             release/${{ steps.read_app_name.outputs.app_name }}.ipa
             release/${{ steps.read_app_name.outputs.app_name }}-windows.zip
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
